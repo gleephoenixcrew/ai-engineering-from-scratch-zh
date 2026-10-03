@@ -3,9 +3,9 @@ name: build
 # 中文翻译版的轻量 CI：
 #   1. 验证站点能正常构建（node site/build.js 生成 data.js）
 #   2. 课程数一致性校验（node site/build.js --check）——防 README/ROADMAP 课数漂移
-#   3. 课程代码语法（Python 3.11）、JSON / quiz 答案下标、站点 JS 语法校验
 #      （曾踩 435 / 498 vs 503）。真相 = 文件系统课程目录数，校验 README 表格/badge/散文
 #      + ROADMAP 总计是否都对得上。
+#   3. 课程代码语法（Python 3.11）、JSON / quiz 答案下标、站点 JS 语法校验
 # 不照搬上游 scripts/audit_lessons.py + check_readme_counts.py（它们硬编码 docs/en.md
 # + 英文 README 正则，对中文仓全不兼容，且是 B 类 1:1 同步资产，改了会与上游冲突）——
 # 改用 build.js 自带的 --check 做等价校验，认 zh.md、匹配中文文案，不碰上游 Python 脚本。
