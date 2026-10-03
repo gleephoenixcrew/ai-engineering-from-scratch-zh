@@ -3,6 +3,7 @@ name: build
 # 中文翻译版的轻量 CI：
 #   1. 验证站点能正常构建（node site/build.js 生成 data.js）
 #   2. 课程数一致性校验（node site/build.js --check）——防 README/ROADMAP 课数漂移
+#   3. 课程代码语法（Python 3.11）、JSON / quiz 答案下标、站点 JS 语法校验
 #      （曾踩 435 / 498 vs 503）。真相 = 文件系统课程目录数，校验 README 表格/badge/散文
 #      + ROADMAP 总计是否都对得上。
 # 不照搬上游 scripts/audit_lessons.py + check_readme_counts.py（它们硬编码 docs/en.md
@@ -39,3 +40,54 @@ jobs:
           echo "✅ 站点构建成功，data.js 已生成"
       - name: 课程数一致性校验（防 README/ROADMAP 课数漂移）
         run: node site/build.js --check
+
+  lint-code:
+    name: 课程代码语法 + JSON 校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # 课程承诺 Python 3.11+（phase 0 第 1 课），用最低支持版本编译，
+          # 防止混入 3.12 才允许的语法（如 f-string 内反斜杠）
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Python 语法检查（phases/**/*.py）
+        run: |
+          python - <<'PY'
+          import ast, glob, sys
+          bad = 0
+          for f in sorted(glob.glob("phases/**/*.py", recursive=True)):
+              try:
+                  ast.parse(open(f, encoding="utf-8").read(), filename=f)
+              except SyntaxError as e:
+                  print(f"::error file={f},line={e.lineno}::{e.msg}")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+      - name: JSON 合法性 + quiz 答案下标校验
+        run: |
+          python - <<'PY'
+          import glob, json, sys
+          bad = 0
+          files = glob.glob("phases/**/*.json", recursive=True) + glob.glob("site/*.json")
+          for f in sorted(files):
+              try:
+                  data = json.load(open(f, encoding="utf-8"))
+              except ValueError as e:
+                  print(f"::error file={f}::{e}")
+                  bad += 1
+                  continue
+              if f.endswith("quiz.json"):
+                  qs = data if isinstance(data, list) else data.get("questions", [])
+                  for i, q in enumerate(qs):
+                      opts, ans = q.get("options", []), q.get("correct")
+                      if not isinstance(ans, int) or not 0 <= ans < len(opts):
+                          print(f"::error file={f}::第 {i} 题 correct={ans} 超出选项范围")
+                          bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+      - name: 站点 JS 语法检查
+        run: for f in site/*.js; do node --check "$f" || exit 1; done
