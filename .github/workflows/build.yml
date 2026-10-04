@@ -5,7 +5,7 @@ name: build
 #   2. 课程数一致性校验（node site/build.js --check）——防 README/ROADMAP 课数漂移
 #      （曾踩 435 / 498 vs 503）。真相 = 文件系统课程目录数，校验 README 表格/badge/散文
 #      + ROADMAP 总计是否都对得上。
-#   3. 课程代码语法（Python 3.11）、JSON / quiz 答案下标、站点 JS 语法校验
+#   3. 课程代码语法（Python 3.11 + 最新版）、JSON / quiz 答案下标、站点 JS 语法校验
 # 不照搬上游 scripts/audit_lessons.py + check_readme_counts.py（它们硬编码 docs/en.md
 # + 英文 README 正则，对中文仓全不兼容，且是 B 类 1:1 同步资产，改了会与上游冲突）——
 # 改用 build.js 自带的 --check 做等价校验，认 zh.md、匹配中文文案，不碰上游 Python 脚本。
@@ -41,32 +41,46 @@ jobs:
       - name: 课程数一致性校验（防 README/ROADMAP 课数漂移）
         run: node site/build.js --check
 
-  lint-code:
-    name: 课程代码语法 + JSON 校验
+  python-syntax:
+    name: 课程代码语法（Python ${{ matrix.python }}）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 两端都测：3.11 是课程承诺的最低版本（phase 0 第 1 课），挡住只有新版才允许的语法
+        # （如 3.12 的 f-string 内反斜杠）；3.x 是最新稳定版，挡住新版已废弃/移除的写法
+        # （如无效转义序列的 SyntaxWarning，将来会升级为错误）
+        python: ["3.11", "3.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Python 语法检查（phases/**/*.py）
+        run: |
+          python -W error::SyntaxWarning - <<'PY'
+          import glob, sys
+          bad = 0
+          for f in sorted(glob.glob("phases/**/*.py", recursive=True)):
+              try:
+                  compile(open(f, encoding="utf-8").read(), f, "exec")
+              except (SyntaxError, SyntaxWarning) as e:
+                  print(f"::error file={f},line={getattr(e, 'lineno', 0)}::{e}")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
+
+  lint-data:
+    name: JSON / quiz / 站点 JS 校验
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          # 课程承诺 Python 3.11+（phase 0 第 1 课），用最低支持版本编译，
-          # 防止混入 3.12 才允许的语法（如 f-string 内反斜杠）
-          python-version: "3.11"
+          python-version: "3.x"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Python 语法检查（phases/**/*.py）
-        run: |
-          python - <<'PY'
-          import ast, glob, sys
-          bad = 0
-          for f in sorted(glob.glob("phases/**/*.py", recursive=True)):
-              try:
-                  ast.parse(open(f, encoding="utf-8").read(), filename=f)
-              except SyntaxError as e:
-                  print(f"::error file={f},line={e.lineno}::{e.msg}")
-                  bad += 1
-          sys.exit(1 if bad else 0)
-          PY
       - name: JSON 合法性 + quiz 答案下标校验
         run: |
           python - <<'PY'
